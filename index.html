@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<head></head>
+<body>
+
+<input id = "QueryStr" type="text" placeholder="Insert Query">
+<button id="submitQuery" type="button" placeholder="Submit">Submit</button>
+<p id='QueryData'></p>
+
+<script>
+	var button = document.getElementById("submitQuery");
+	var query;
+	var para;
+	var response;
+	var response_data;
+	async function embedResults()
+	{
+		console.log("got into event");
+		query = document.getElementById("QueryStr").value;
+		try 
+		{
+			para = document.getElementById("QueryData"); 
+			var url = `http://127.0.0.1:8000/?query=${query}`;
+			response = await fetch(url)
+			.then(response => response.text())
+			.then(data => embed(data, para))
+			.catch(error => console.log(error));
+			//response_data = await response.json();
+
+		}
+		catch (error)
+		{
+			console.error(error.message);
+		}
+	}
+	function embed(data, sink)
+	{
+		sink.innerHTML = data;
+	}
+	button.addEventListener("click", embedResults); 
+</script>
+</body>
