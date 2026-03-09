@@ -6,7 +6,10 @@
 <button id="submitQuery" type="button" placeholder="Submit">Submit</button>
 <p id='QueryData'></p>
 <!-- 
-The slight nuance here is getting around the URL encoding, as since the node is such a barebones server that doesn't expect queries to contain unusual chars, it doesn't bother to decode them and instead just throws a 400 error with the returned data from the DB connection.
+Currently built for POST requests. For testing GET use curl w/ the payload
+	
+For GET:
+The slight nuance here is getting around the URL encoding, as the node is such a barebones server that doesn't expect queries to contain unusual chars, it doesn't bother to decode them and instead just throws a 400 error with the returned data from the DB connection.
 
 Some payloads:
 'OR'1'='1
@@ -28,7 +31,7 @@ Use of functions in the query:
 		{
 			para = document.getElementById("QueryData"); 
 			var url = `http://127.0.0.1:8000/?query=${query}`;
-			response = await fetch(url)
+			response = await fetch(url, {method: 'POST', body:query})
 			.then(response => response.text())
 			.then(data => embed(data, para))
 			.catch(error => console.log(error));
