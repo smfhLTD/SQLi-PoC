@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <head></head>
 <body>
-<h1> Welcome<br>Please enter a username to get started.</h1>
-<input id = "QueryStr" type="text" placeholder="Insert Query">
-<button id="submitQuery" type="button" placeholder="Submit">Submit</button>
-<p id='QueryData'></p>
+	<h1> Welcome<br>Please enter a username to get started.</h1>
+	<input id = "POSTQueryStr" type="text" placeholder="POST Query">
+	<button id="submitQueryPOST" type="button" placeholder="Submit">Submit</button>
+	<br>
+	<input id = "GETQueryStr" type="text" placeholder="GET Query">
+	<button id="submitQueryGET" type="button" placeholder="Submit">Submit</button>
+	<p id='QueryData'></p>
 <!-- 
-Currently built for POST requests. For testing GET use curl w/ the payload
-	
-For GET:
-The slight nuance here is getting around the URL encoding, as the node is such a barebones server that doesn't expect queries to contain unusual chars, it doesn't bother to decode them and instead just throws a 400 error with the returned data from the DB connection.
+The slight nuance here is getting around the URL encoding, as the node is a barebones server that doesn't expect queries to contain unusual chars, it doesn't bother to decode them and instead just throws a 400 error with the returned data from the DB connection.
 
 Some payloads:
 'OR'1'='1
@@ -17,36 +17,42 @@ Some payloads:
 Use of functions in the query:
 '/**/UNION/**/SELECT'*','*',CURRENT_ROLE()FROM/**/users/**/WHERE/**/id>'
 -->
-<script>
-	var button = document.getElementById("submitQuery");
-	var query;
-	var para;
-	var response;
-	var response_data;
-	async function embedResults()
-	{
-		console.log("got into event");
-		query = document.getElementById("QueryStr").value;
-		try 
+	<script>
+		var button_POST = document.getElementById("submitQueryPOST");
+		var button_GET = document.getElementById("submitQueryGET");
+		var query;
+		var para;
+		var response;
+		var response_data;
+		var url;
+		function init()
 		{
-			para = document.getElementById("QueryData"); 
-			var url = `http://127.0.0.1:8000/?query=${query}`;
-			response = await fetch(url, {method: 'POST', body:query})
+			console.log("got into event");
+			// query = document.getElementById("QueryStr").value;
+			try 
+			{
+				para = document.getElementById("QueryData"); 
+				url = `http://127.0.0.1:8000/?query=${query}`;
+				if(query = document.getElementById("POSTQueryStr").value) { fetchData(url, "POST", para, query)}
+				else if(query = document.getElementById("GETQueryStr").value) { fetchData(url, "GET", para, null)}
+			}
+			catch (error)
+			{
+				console.error(error.message);
+			}
+		}
+		//for some reason GET needs 2 clicks to set the value of "para", whatever for now
+		// should look into proper JS debugging
+		async function fetchData(url, method, sink, query)
+		{
+			response = await fetch(url, {method: method, body:query})
 			.then(response => response.text())
-			.then(data => embed(data, para))
+			.then(data => para.innerHTML = data)
 			.catch(error => console.log(error));
-			//response_data = await response.json();
+		}
 
-		}
-		catch (error)
-		{
-			console.error(error.message);
-		}
-	}
-	function embed(data, sink)
-	{
-		sink.innerHTML = data;
-	}
-	button.addEventListener("click", embedResults); 
-</script>
+		button_POST.addEventListener("click", init); 
+		button_GET.addEventListener("click", init); 
+	
+	</script>
 </body>
