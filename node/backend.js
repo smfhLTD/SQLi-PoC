@@ -4,10 +4,12 @@
 /*************TASKS**********/
 /*
 // Might as well take apache out of the equation and just run everything on the node... Could be an easier and more efficient solution.
+// Include payload file for ideas that didn't make it here, but could in other cases.
 * GET DONE
 * POST SQLi DONE
 * Blind SQLi DONE
-* Header Based injections (see: http.request.headers)
+* Header Based injections (see: http.request.headers) DONE
+
 * Cookie Based injections
 * Mulitipart Form data injections
 * JSON based injections
@@ -53,27 +55,22 @@ var server = http.createServer((request, response) =>
 		var dbConnection;
 		var dbData;
 		var userAgent;
-		
-		/* {
-			host: '127.0.0.1:8000',
-			'user-agent': '{VARIABLE LENGTH}',
-			...
-		*/
-		// SELECT IF(STRCMP(CURRENT_USER(),'temp@%') = 0, 'YES', 'NO');
-		// SELECT IF(STRCMP(CURRENT_USER(),"temp@%") = 0, "YES", "NO + `');
+
 		// HEADER LOGGING INJECTION
 			//assuming user-agent is always the 2nd header...
 		userAgent = Object.values(request.headers)[1];
 		console.log("inserting user agent into db: " + userAgent);
 		dbConnection = queryDatabase();
-		// INSERT INTO user_agents VALUES('mozilla'); SELECT IF(2>1, SLEEP(2), 'no`');`
+
+		// PoC payload: INSERT INTO user_agents VALUES('{mozilla') UNION SELECT SLEEP('5}
+		// Perhaps due to AJAX? but they're sequential...
+				// Here, the injection is 100% blind, as the attacker has no indication whether or not the payload was syntactically correct/not
 		headerQuery = `INSERT INTO user_agents VALUES('${userAgent}');`
 		dbConnection.query(headerQuery, function(err, results, fields)
 		{
 			if(err) {console.log("ERROR logging user-agent: " + err)}
 
 		});
-
 
 		if(request.method == "GET")
 		{
@@ -91,7 +88,6 @@ var server = http.createServer((request, response) =>
 					response.end(JSON.stringify(results));
 				});
 		}
-
 		else if (request.method == "POST" ) 
 		{
 			request.setEncoding("utf8");
