@@ -10,7 +10,8 @@
 * Blind SQLi DONE
 * Header Based injections (see: http.request.headers) DONE
 
-* Cookie Based injections
+* Cookie Based injections WIP
+
 * Mulitipart Form data injections
 * JSON based injections
 * SOAP/XML based injections
@@ -19,6 +20,8 @@
 //A node.js driver is an interface for connecting the node.js process with other data sources, like other apps and DBMS'.
 let mysql = require('mysql');
 let http = require('node:http');
+let { createHash } = require('node:crypto');
+let randomstring = require('randomstring');
 
 //response.end([data[, encoding]][, callback])
 	// If data is specified, it is similar in effect to calling response.write(data, encoding) followed by response.end(callback)
@@ -43,8 +46,47 @@ function queryDatabase()
 
 	//can't yet perform both the querying and dbConnection creation in same func, can't fish db results out of dbConn.query()'s scope... Has to be a better workaround. 
 	// can use response.write() here to append the results, then .end() after returning. response object should be modified if node/JS passes 
-		// function parameters by REFERENCE, rather than by VALUE
+		// function parameters by REFERENCE, rather than by VALUE (by value for primitives, 
 	return dbConnection;
+}
+
+
+function getCookie(cookieId) //NEEDS FIXING
+{
+	var dbConnection = queryDatabase();
+	// Compare the unix epochs values to check expiration and existence
+	query = `SELECT * FROM cookies WHERE id=${cookieId} AND expiration > (SELECT UNIX_TIMESTAMP());`
+	dbConnection.query(query, function(err, results, fields) 
+	{	
+		if(results)
+		{
+			console.log("Cookie exists and is valid!");
+			return true;
+		}
+		else
+		{
+			console.log("COOKIE INVALID, REMOVING FROM DB.");
+			dbConnection.query(`DELETE FROM cookies WHERE cookie=${cookieId};`);
+			return false;
+		}
+	});
+}
+
+function setCookie(serverResponse)
+{
+	// Create a cookie comprised of a random 32 character string and give it a 5 minute lifespan via unix epoch
+	var md5 = createHash('md5');
+	var expiration = (Date.now() / 1000) + 300;
+	var dbConnection = queryDatabase();
+	var digest = (md5.update(randomstring.generate(32))).digest('hex');
+	console.log("DIGEST: " + digest);
+	var query = `INSERT INTO cookies VALUES('${digest}', ${expiration});`
+	dbConnection.query(query, function(err, results, fields)
+	{
+		if(err) {console.log("ERROR GENERATING COOKIE: " + err);}
+		else {console.log(`Inserted cookie into db: ${digest}: ${expiration}`);}
+	});
+	serverResponse.setHeader('Set-Cookie', `sessionId=${digest}`);
 }
 var server = http.createServer((request, response) => 
 {
@@ -55,6 +97,18 @@ var server = http.createServer((request, response) =>
 		var dbConnection;
 		var dbData;
 		var userAgent;
+		//COOKIE VALIDATION INJECTION
+		if (response.hasHeader('Cookie'))
+		{
+			//check if cookie exists and isn't expired
+			if(!(getCookie(response))) { setCookie(response);}
+		}
+		else
+		{
+			//generate a cookie
+			setCookie(response);
+		}
+
 
 		// HEADER LOGGING INJECTION
 			//assuming user-agent is always the 2nd header...
