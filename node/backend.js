@@ -46,19 +46,22 @@ function queryDatabase()
 
 	//can't yet perform both the querying and dbConnection creation in same func, can't fish db results out of dbConn.query()'s scope... Has to be a better workaround. 
 	// can use response.write() here to append the results, then .end() after returning. response object should be modified if node/JS passes 
-		// function parameters by REFERENCE, rather than by VALUE (by value for primitives, 
+		// function parameters by REFERENCE, rather than by VALUE
 	return dbConnection;
 }
 
 
-function getCookie(cookieId) //NEEDS FIXING
+async function getCookie(cookieId)
 {
-	var dbConnection = queryDatabase();
 	// Compare the unix epochs values to check expiration and existence
-	query = `SELECT * FROM cookies WHERE id=${cookieId} AND expiration > (SELECT UNIX_TIMESTAMP());`
-	dbConnection.query(query, function(err, results, fields) 
-	{	
-		if(results)
+	// Perhaps the problem is the improper use of the 'await' keyword here. I also keep forgetting that callback functions have their own scope
+		// so the previous return statements in .query()'s callback weren't exiting getCookie. Should look into proper local debugging methods for NodeJS
+	var dbConnection = queryDatabase();
+	console.log("Checking cookie validitiy for ID: " + cookieId);
+	query = `SELECT id as ID, expiration FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP()) AS ID;`
+	var cookie_bool = await dbConnection.query(query, function(err, results, fields) {	
+		console.log("cookie lookup results: " + results[0]);
+		if(results[0].id != undefined)
 		{
 			console.log("Cookie exists and is valid!");
 			return true;
@@ -66,30 +69,51 @@ function getCookie(cookieId) //NEEDS FIXING
 		else
 		{
 			console.log("COOKIE INVALID, REMOVING FROM DB.");
-			dbConnection.query(`DELETE FROM cookies WHERE cookie=${cookieId};`);
+			dbConnection.query(`DELETE FROM cookies WHERE id='${cookieId}';`, function(error, result, field)
+			{
+				if(error) {console.log("ERROR Deleting cookie from DB: " + error);}
+			});
 			return false;
 		}
 	});
+	if(cookie_bool) { return true;} 
+	else { return false;}
+
 }
 
-function setCookie(serverResponse)
+async function setCookie(serverResponse)
 {
 	// Create a cookie comprised of a random 32 character string and give it a 5 minute lifespan via unix epoch
 	var md5 = createHash('md5');
+	console.log("current epoch: " + (Date.now() / 1000));
 	var expiration = (Date.now() / 1000) + 300;
 	var dbConnection = queryDatabase();
 	var digest = (md5.update(randomstring.generate(32))).digest('hex');
 	console.log("DIGEST: " + digest);
-	var query = `INSERT INTO cookies VALUES('${digest}', ${expiration});`
-	dbConnection.query(query, function(err, results, fields)
+	var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
+	await dbConnection.query(query, function(err, results, fields)
 	{
 		if(err) {console.log("ERROR GENERATING COOKIE: " + err);}
-		else {console.log(`Inserted cookie into db: ${digest}: ${expiration}`);}
+		else { console.log(`Inserted cookie into db: ${digest}:${expiration}`);}
 	});
 	serverResponse.setHeader('Set-Cookie', `sessionId=${digest}`);
 }
-var server = http.createServer((request, response) => 
+var server = http.createServer(async function(request, response) 
 {
+/* 
+cookie is attched... checking validity.
+Checking cookie validitiy for ID: 430d805d95dcb424c553de9ff160da60
+cookie attached is INVALID, entering setcookie()
+current epoch: 1773410906.136
+DIGEST: ff01e47fd1ae9b58ca21667860572787
+inserting user agent into db: Mozilla/5.0 (X11; Linux x86_64)
+NO RESULT, EXIT getCookie
+cookie lookup results: [object Object]
+Cookie exists and is valid!
+Inserted cookie into db: ff01e47fd1ae9b58ca21667860572787:1773411206.136
+
+
+*/
 
 		var clientQuery;
 		var query;
@@ -98,21 +122,29 @@ var server = http.createServer((request, response) =>
 		var dbData;
 		var userAgent;
 		//COOKIE VALIDATION INJECTION
-		if (response.hasHeader('Cookie'))
+		if (request.headers.cookie)
 		{
-			//check if cookie exists and isn't expired
-			if(!(getCookie(response))) { setCookie(response);}
+			console.log("cookie is attched... checking validity.");
+			if( (await getCookie(request.headers.cookie.substring(10)))) 
+			{ 
+				console.log("Cookie is valid!"); 
+			}
+			else
+			{
+				console.log("cookie attached is INVALID, entering setcookie()");
+				await setCookie(response);
+			}
 		}
 		else
 		{
-			//generate a cookie
-			setCookie(response);
+			console.log("COOKIE NOT ATTACHED, GENERATING");
+			await setCookie(response);
 		}
 
 
 		// HEADER LOGGING INJECTION
-			//assuming user-agent is always the 2nd header...
-		userAgent = Object.values(request.headers)[1];
+			//WIP Playing with a better parsing method here to extract the user-agent string instead of relying on its index
+		/* userAgent = request.headers.user_agent.substring(10);
 		console.log("inserting user agent into db: " + userAgent);
 		dbConnection = queryDatabase();
 
@@ -125,14 +157,14 @@ var server = http.createServer((request, response) =>
 			if(err) {console.log("ERROR logging user-agent: " + err)}
 
 		});
-
+		*/
 		if(request.method == "GET")
 		{
 			response.writeHead(200, {"Content-Type": "application/json"}); 
 			clientQuery = request.url.slice(8); 
 			console.log("Received query: " + clientQuery);
 			//if((dbData = queryDatabase(clientQuery)) != null) {response.end(JSON.stringify(dbData));} FOR AFTER FIXING dbConn.query() SCOPE ISSUE
-			dbData = queryDatabase();
+			//dbData = queryDatabase();
 				query = `SELECT id,user,password FROM users WHERE user='${clientQuery}';`;
 				dbConnection = queryDatabase();
 				dbConnection.query(query, function(err, results, fields) 
@@ -144,18 +176,18 @@ var server = http.createServer((request, response) =>
 		}
 		else if (request.method == "POST" ) 
 		{
+			console.log("RECEIVED POST DATA");
 			request.setEncoding("utf8");
 			request.on("data", (data) => {
 				if(data === null) {response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
-				dbData = queryDatabase(data);
-					query = `SELECT id,user,password FROM users WHERE user='${data}';`;
-					dbConnection = queryDatabase();
-					dbConnection.query(query, function(err, results, fields) 
-					{	
-						if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
-						dbConnection.end();
-						response.end(JSON.stringify(results));
-					});
+
+				query = `SELECT id,user,password FROM users WHERE user='${data}';`;
+				dbConnection = queryDatabase();
+				dbConnection.query(query, function(err, results, fields) 
+				{	
+					if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
+					response.end(JSON.stringify(results));
+				});
 			});
 		}
 
