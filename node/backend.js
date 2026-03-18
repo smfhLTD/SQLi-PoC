@@ -51,39 +51,51 @@ function queryDatabase()
 }
 
 
-async function getCookie(cookieId)
+function getCookie(cookieId, response)
 {
 	// Compare the unix epochs values to check expiration and existence
-	// Perhaps the problem is the improper use of the 'await' keyword here. I also keep forgetting that callback functions have their own scope
-		// so the previous return statements in .query()'s callback weren't exiting getCookie. Should look into proper local debugging methods for NodeJS
+
 	var dbConnection = queryDatabase();
 	console.log("Checking cookie validitiy for ID: " + cookieId);
-	query = `SELECT id as ID, expiration FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP()) AS ID;`
-	var cookie_bool = await dbConnection.query(query, function(err, results, fields) {	
-		console.log("cookie lookup results: " + results[0]);
-		if(results[0].id != undefined)
+	query = `SELECT * FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP());`
+
+	let queryPromise = new Promise(function(resolve, reject) 
+	{ 
+		let returnval = dbConnection.query(query, function(err, results) 
+		{	
+			if(err) {reject(err);}
+			resolve(results);
+		})
+	});
+
+	queryPromise.then(
+	function(results) 
+	{ 
+		if(Object.keys(results).length != 0) //WORKS
 		{
-			console.log("Cookie exists and is valid!");
-			return true;
+			console.log("Cookie attached is valid!");
 		}
 		else
 		{
-			console.log("COOKIE INVALID, REMOVING FROM DB.");
-			dbConnection.query(`DELETE FROM cookies WHERE id='${cookieId}';`, function(error, result, field)
+			console.warn("COOKIE INVALID, REMOVING COOKIE " + cookieId + " FROM DB.");
+			dbConnection.query(`DELETE FROM cookies WHERE id='${cookieId}';`, function(error, result)
 			{
 				if(error) {console.log("ERROR Deleting cookie from DB: " + error);}
 			});
-			return false;
+			//current issue is in this functionality - setCookie is trying to set headers AFTER the response is already sent. Need to implement promises here properly. 
+			// Currently only works if the cookie is valid.
+			setCookie(response);
 		}
-	});
-	if(cookie_bool) { return true;} 
-	else { return false;}
 
+	},
+	function(err) {console.log("ERROR LOOKING FOR COOKIE IN DB!");}
+	);
 }
 
-async function setCookie(serverResponse)
+function setCookie(serverResponse)
 {
 	// Create a cookie comprised of a random 32 character string and give it a 5 minute lifespan via unix epoch
+	debugger;
 	var md5 = createHash('md5');
 	console.log("current epoch: " + (Date.now() / 1000));
 	var expiration = (Date.now() / 1000) + 300;
@@ -91,29 +103,16 @@ async function setCookie(serverResponse)
 	var digest = (md5.update(randomstring.generate(32))).digest('hex');
 	console.log("DIGEST: " + digest);
 	var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
-	await dbConnection.query(query, function(err, results, fields)
+	dbConnection.query(query, function(err, results)
 	{
 		if(err) {console.log("ERROR GENERATING COOKIE: " + err);}
 		else { console.log(`Inserted cookie into db: ${digest}:${expiration}`);}
+		debugger;
+		serverResponse.setHeader('Set-Cookie', `sessionId=${digest}`);
 	});
-	serverResponse.setHeader('Set-Cookie', `sessionId=${digest}`);
 }
-var server = http.createServer(async function(request, response) 
+var server = http.createServer(function(request, response) 
 {
-/* 
-cookie is attched... checking validity.
-Checking cookie validitiy for ID: 430d805d95dcb424c553de9ff160da60
-cookie attached is INVALID, entering setcookie()
-current epoch: 1773410906.136
-DIGEST: ff01e47fd1ae9b58ca21667860572787
-inserting user agent into db: Mozilla/5.0 (X11; Linux x86_64)
-NO RESULT, EXIT getCookie
-cookie lookup results: [object Object]
-Cookie exists and is valid!
-Inserted cookie into db: ff01e47fd1ae9b58ca21667860572787:1773411206.136
-
-
-*/
 
 		var clientQuery;
 		var query;
@@ -121,24 +120,18 @@ Inserted cookie into db: ff01e47fd1ae9b58ca21667860572787:1773411206.136
 		var dbConnection;
 		var dbData;
 		var userAgent;
+
 		//COOKIE VALIDATION INJECTION
 		if (request.headers.cookie)
 		{
 			console.log("cookie is attched... checking validity.");
-			if( (await getCookie(request.headers.cookie.substring(10)))) 
-			{ 
-				console.log("Cookie is valid!"); 
-			}
-			else
-			{
-				console.log("cookie attached is INVALID, entering setcookie()");
-				await setCookie(response);
-			}
+			getCookie(request.headers.cookie.substring(10), response); 
+
 		}
 		else
 		{
 			console.log("COOKIE NOT ATTACHED, GENERATING");
-			await setCookie(response);
+			setCookie(response);
 		}
 
 
@@ -167,7 +160,7 @@ Inserted cookie into db: ff01e47fd1ae9b58ca21667860572787:1773411206.136
 			//dbData = queryDatabase();
 				query = `SELECT id,user,password FROM users WHERE user='${clientQuery}';`;
 				dbConnection = queryDatabase();
-				dbConnection.query(query, function(err, results, fields) 
+				dbConnection.query(query, function(err, results) 
 				{	
 					if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
 					dbConnection.end();
@@ -183,16 +176,16 @@ Inserted cookie into db: ff01e47fd1ae9b58ca21667860572787:1773411206.136
 
 				query = `SELECT id,user,password FROM users WHERE user='${data}';`;
 				dbConnection = queryDatabase();
-				dbConnection.query(query, function(err, results, fields) 
+				dbConnection.query(query, function(err, results) 
 				{	
 					if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
+					debugger;
 					response.end(JSON.stringify(results));
 				});
 			});
 		}
-
 		else {console.log('Invalid METHOD'); response.end('HTTP/1.1 400 Bad Request \r\n\r\n')};
-
+		debugger;
 });
 server.on('clientError', (err, socket) => 
 {
