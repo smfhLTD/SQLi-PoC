@@ -51,7 +51,7 @@ function queryDatabase()
 }
 
 
-function getCookie(cookieId, response)
+async function getCookie(cookieId, response)
 {
 	// Compare the unix epochs values to check expiration and existence
 
@@ -59,17 +59,16 @@ function getCookie(cookieId, response)
 	console.log("Checking cookie validitiy for ID: " + cookieId);
 	query = `SELECT * FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP());`
 
-	let queryPromise = new Promise(function(resolve, reject) 
+	let queryPromise = await new Promise(function(resolve, reject) 
 	{ 
-		let returnval = dbConnection.query(query, function(err, results) 
+		dbConnection.query(query, function(err, results) 
 		{	
 			if(err) {reject(err);}
 			resolve(results);
 		})
 	});
 
-	queryPromise.then(
-	function(results) 
+	queryPromise.then(function(results) 
 	{ 
 		if(Object.keys(results).length != 0) //WORKS
 		{
@@ -91,26 +90,60 @@ function getCookie(cookieId, response)
 	function(err) {console.log("ERROR LOOKING FOR COOKIE IN DB!");}
 	);
 }
+/* 
+function getLastRecord(name)
+{
+    return new Promise(function(resolve, reject) {
+        // The Promise constructor should catch any errors thrown on
+        // this tick. Alternately, try/catch and reject(err) on catch.
+        var connection = getMySQL_connection();
 
+        var query_str =
+        "SELECT name, " +
+        "FROM records " +   
+        "WHERE (name = ?) " +
+        "LIMIT 1 ";
+
+        var query_var = [name];
+
+        connection.query(query_str, query_var, function (err, rows, fields) {
+            // Call reject on error states,
+            // call resolve with results
+            if (err) {
+                return reject(err);
+            }
+            resolve(rows);
+        });
+    });
+}
+
+getLastRecord('name_record').then(function(rows) {
+    // now you have your rows, you can see if there are <20 of them
+}).catch((err) => setImmediate(() => { throw err; })); // Throw async to escape the promise chain
+
+*/
 function setCookie(serverResponse)
 {
-	// Create a cookie comprised of a random 32 character string and give it a 5 minute lifespan via unix epoch
-	debugger;
-	var md5 = createHash('md5');
-	console.log("current epoch: " + (Date.now() / 1000));
-	var expiration = (Date.now() / 1000) + 300;
-	var dbConnection = queryDatabase();
-	var digest = (md5.update(randomstring.generate(32))).digest('hex');
-	console.log("DIGEST: " + digest);
-	var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
-	dbConnection.query(query, function(err, results)
+	return new Promise(function(resolve, reject)
 	{
-		if(err) {console.log("ERROR GENERATING COOKIE: " + err);}
-		else { console.log(`Inserted cookie into db: ${digest}:${expiration}`);}
-		debugger;
-		serverResponse.setHeader('Set-Cookie', `sessionId=${digest}`);
+		var md5 = createHash('md5');
+		console.log("current epoch: " + (Date.now() / 1000));
+		var expiration = (Date.now() / 1000) + 300;
+		var dbConnection = queryDatabase();
+		var digest = (md5.update(randomstring.generate(32))).digest('hex');
+		console.log("DIGEST: " + digest);
+		var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
+		//debugger;
+		dbConnection.query(query, function(err, results)
+		{
+			//inside cookie insert query
+			debugger;
+			if(err) {return reject(err);} //the return here is in the scope of the callback though...?
+			resolve(digest, expiration);
+		});
 	});
 }
+
 var server = http.createServer(function(request, response) 
 {
 
@@ -121,18 +154,6 @@ var server = http.createServer(function(request, response)
 		var dbData;
 		var userAgent;
 
-		//COOKIE VALIDATION INJECTION
-		if (request.headers.cookie)
-		{
-			console.log("cookie is attched... checking validity.");
-			getCookie(request.headers.cookie.substring(10), response); 
-
-		}
-		else
-		{
-			console.log("COOKIE NOT ATTACHED, GENERATING");
-			setCookie(response);
-		}
 
 
 		// HEADER LOGGING INJECTION
@@ -164,7 +185,7 @@ var server = http.createServer(function(request, response)
 				{	
 					if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
 					dbConnection.end();
-					response.end(JSON.stringify(results));
+					response.write(JSON.stringify(results));
 				});
 		}
 		else if (request.method == "POST" ) 
@@ -179,13 +200,37 @@ var server = http.createServer(function(request, response)
 				dbConnection.query(query, function(err, results) 
 				{	
 					if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
+					//before response.end in POST
 					debugger;
-					response.end(JSON.stringify(results));
+					response.write(JSON.stringify(results));
 				});
 			});
 		}
 		else {console.log('Invalid METHOD'); response.end('HTTP/1.1 400 Bad Request \r\n\r\n')};
-		debugger;
+		
+		//COOKIE VALIDATION INJECTION
+		if (request.headers.cookie)
+		{
+			console.log("cookie is attched... checking validity.");
+			getCookie(request.headers.cookie.substring(10), response); 
+		}
+		else
+		{
+			debugger;
+			console.log("COOKIE NOT ATTACHED, GENERATING");
+			setCookie(response).then(function(digest, results)
+			{
+				debugger;
+				console.log('SUCCESS in COOKIE INSERTION');
+				try { 
+					debugger;
+					var cookie = `Set-Cookie: sessionId=${digest}`; 
+					response.writeHead(cookie, "utf8");
+					response.end(); }
+				catch(err) {console.log("ERROR in Set-Cookie:" + err );}
+			},
+			function(err) {console.error("ERROR in COOKIE GENERATION: " + err);});
+		}
 });
 server.on('clientError', (err, socket) => 
 {
