@@ -33,6 +33,8 @@ let randomstring = require('randomstring');
 	// Could this be used for a sort of Header Pollution? Could be useful later...
 
 //typeof(request) === http.IncomingMessage 
+
+
 function queryDatabase()
 {
 	var dbConnection = null; 
@@ -42,7 +44,7 @@ function queryDatabase()
 		password: 'secret',
 		database: 'sqli_data'
 	});
-	
+
 
 	//can't yet perform both the querying and dbConnection creation in same func, can't fish db results out of dbConn.query()'s scope... Has to be a better workaround. 
 	// can use response.write() here to append the results, then .end() after returning. response object should be modified if node/JS passes 
@@ -81,7 +83,7 @@ async function getCookie(cookieId, response)
 			{
 				if(error) {console.log("ERROR Deleting cookie from DB: " + error);}
 			});
-			//current issue is in this functionality - setCookie is trying to set headers AFTER the response is already sent. Need to implement promises here properly. 
+			//current issue is in this functionality - /setCookie is trying to set headers AFTER the response is already sent. Need to implement promises here properly. 
 			// Currently only works if the cookie is valid.
 			setCookie(response);
 		}
@@ -90,38 +92,7 @@ async function getCookie(cookieId, response)
 	function(err) {console.log("ERROR LOOKING FOR COOKIE IN DB!");}
 	);
 }
-/* 
-function getLastRecord(name)
-{
-    return new Promise(function(resolve, reject) {
-        // The Promise constructor should catch any errors thrown on
-        // this tick. Alternately, try/catch and reject(err) on catch.
-        var connection = getMySQL_connection();
 
-        var query_str =
-        "SELECT name, " +
-        "FROM records " +   
-        "WHERE (name = ?) " +
-        "LIMIT 1 ";
-
-        var query_var = [name];
-
-        connection.query(query_str, query_var, function (err, rows, fields) {
-            // Call reject on error states,
-            // call resolve with results
-            if (err) {
-                return reject(err);
-            }
-            resolve(rows);
-        });
-    });
-}
-
-getLastRecord('name_record').then(function(rows) {
-    // now you have your rows, you can see if there are <20 of them
-}).catch((err) => setImmediate(() => { throw err; })); // Throw async to escape the promise chain
-
-*/
 function setCookie(serverResponse)
 {
 	return new Promise(function(resolve, reject)
@@ -133,19 +104,113 @@ function setCookie(serverResponse)
 		var digest = (md5.update(randomstring.generate(32))).digest('hex');
 		console.log("DIGEST: " + digest);
 		var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
-		//debugger;
 		dbConnection.query(query, function(err, results)
 		{
 			//inside cookie insert query
 			debugger;
-			if(err) {return reject(err);} //the return here is in the scope of the callback though...?
-			resolve(digest, expiration);
 		});
 	});
 }
 
+//how to several args?
+function cookieStuff(request, response)
+{
+	if (request.headers.cookie)
+	{
+		console.log("cookie is attched... checking validity.");
+		getCookie(request.headers.cookie.substring(10), response); 
+	}
+	else
+	{
+		debugger;
+		console.log("COOKIE NOT ATTACHED, GENERATING");
+		setCookie(response).then(function(digest, results)
+		{
+			debugger;
+			console.log('SUCCESS in COOKIE INSERTION');
+			try { 
+				debugger;
+				var cookie = `Set-Cookie: sessionId=${digest}`; 
+				response.writeHead(cookie, "utf8");
+				response.end(); }
+			catch(err) {console.log("ERROR in Set-Cookie:" + err );}
+		},
+		function(err) {console.error("ERROR in COOKIE GENERATION: " + err);});
+	}
+}
+function setCookie(response)
+{	
+	var md5 = createHash('md5');
+	console.log("current epoch: " + (Date.now() / 1000));
+	var expiration = (Date.now() / 1000) + 300;
+	var dbConnection = queryDatabase();
+	var digest = (md5.update(randomstring.generate(32))).digest('hex');
+	console.log("DIGEST: " + digest);
+	var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
+	dbConnection.query(query, function(err, results)
+	{
+		//inside cookie insert query
+		debugger;
+
+		var cookie = `Set-Cookie: sessionId=${digest}`; 
+		response.write(cookie, "utf8");
+		response.end();
+	});
+}
+
+function postData(request, response)
+{
+		// ENTERED postDATA
+		debugger;
+		console.log("ASSUMING RECEIVED POST DATA");
+		request.setEncoding("utf8");
+		request.on("data", (data) => {
+			if(data === null) {response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
+
+			query = `SELECT id,user,password FROM users WHERE user='${data}';`;
+			dbConnection = queryDatabase();
+			dbConnection.query(query, function(err, results) 
+			{	
+				if(err) { response.end('HTTP/1.1 400 Bad Request \r\n\r\n');};
+				//before response.end in POST
+				debugger;
+				response.write(JSON.stringify(results));
+			});
+		});
+}
+
+
+function executeFunctionWithArgs(operation, callback) {
+  // executes function
+  const {args, args2, func} = operation;
+  func(args, args2, callback);
+  debugger;
+}
+
+function serialProcedure(operation) 
+{
+  debugger;
+  if (!operation) 
+  {
+    process.exit(0);
+     // finished
+  }
+  executeFunctionWithArgs(operation, function (result) 
+  {
+      // continue AFTER callback
+      serialProcedure(operations.shift());
+  });
+}
+
 var server = http.createServer(function(request, response) 
 {
+	//check if response.writeHead() works from within the functions, as JS passes copy-references and all that... 
+	// --- make sure modifying the response object modifies it in createServer() as well. IT SHOULD
+	operations = [{ func: setCookie, args: response }, {func: postData, args: request, args2: response}]; //the funcs here needs to query the database asynchronously as well - might fuck up the in-series flow	
+
+	// run current function in the queue
+	serialProcedure(operations.shift());
+
 
 		var clientQuery;
 		var query;
@@ -153,7 +218,6 @@ var server = http.createServer(function(request, response)
 		var dbConnection;
 		var dbData;
 		var userAgent;
-
 
 
 		// HEADER LOGGING INJECTION
@@ -188,7 +252,7 @@ var server = http.createServer(function(request, response)
 					response.write(JSON.stringify(results));
 				});
 		}
-		else if (request.method == "POST" ) 
+/*		else if (request.method == "POST" ) 
 		{
 			console.log("RECEIVED POST DATA");
 			request.setEncoding("utf8");
@@ -207,30 +271,8 @@ var server = http.createServer(function(request, response)
 			});
 		}
 		else {console.log('Invalid METHOD'); response.end('HTTP/1.1 400 Bad Request \r\n\r\n')};
-		
-		//COOKIE VALIDATION INJECTION
-		if (request.headers.cookie)
-		{
-			console.log("cookie is attched... checking validity.");
-			getCookie(request.headers.cookie.substring(10), response); 
-		}
-		else
-		{
-			debugger;
-			console.log("COOKIE NOT ATTACHED, GENERATING");
-			setCookie(response).then(function(digest, results)
-			{
-				debugger;
-				console.log('SUCCESS in COOKIE INSERTION');
-				try { 
-					debugger;
-					var cookie = `Set-Cookie: sessionId=${digest}`; 
-					response.writeHead(cookie, "utf8");
-					response.end(); }
-				catch(err) {console.log("ERROR in Set-Cookie:" + err );}
-			},
-			function(err) {console.error("ERROR in COOKIE GENERATION: " + err);});
-		}
+*/
+
 });
 server.on('clientError', (err, socket) => 
 {
