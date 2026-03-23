@@ -50,13 +50,36 @@ function queryDatabase()
 	return dbConnection;
 }
 
-
-async function getCookie(cookieId, response)
+async function checkCookie(request, response)
+{
+	//COOKIE VALIDATION INJECTION
+	if (request.headers.cookie)
+	{
+		console.log("cookie is attched... checking validity.");
+		cookie_pro = await getCookie(request.headers.cookie.substring(10)); 
+		cookie_pro.then(function(bool) {
+			if(bool) 
+				{ console.log("Cookie is valid!(From checkCookie)"); }
+		});
+	}
+	else
+	{
+		console.log("COOKIE NOT ATTACHED, GENERATING");
+		var cookie = await genCookie();
+		if (cookie === null)
+		{
+			console.error("ERROR in COOKIE GENERATION: " + err);
+			return null;
+		}
+			cookie_header = `Set-Cookie: sessionId=${cookie}`; 
+			return cookie_header;
+	}
+}
+async function getCookie(cookieId)
 {
 	var dbConnection = await queryDatabase();
 	console.log("Checking cookie validitiy for ID: " + cookieId);
 	query = `SELECT * FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP());`
-
 	try 
 	{
 		const results = await dbConnection.query(query);	
@@ -67,7 +90,7 @@ async function getCookie(cookieId, response)
 		}
 		else
 		{
-			console.log("COOKIE INVALID, REMOVING COOKIE " + cookieId + " FROM DB.");
+			console.log("COOKIE INVALID! Removing cookie '" + cookieId + "' FROM DB.");
 			try 
 			{ 
 				await dbConnection.query(`DELETE FROM cookies WHERE id='${cookieId}';`);
@@ -75,7 +98,6 @@ async function getCookie(cookieId, response)
 			catch(error)
 			{	
 				console.log("ERROR Deleting cookie from DB: " + error);
-				setCookie(response);
 			}
 		}
 	}
@@ -85,7 +107,7 @@ async function getCookie(cookieId, response)
 	}
 }
 
-async function genCookie(serverResponse)
+async function genCookie()
 {
 
 		var md5 = createHash('md5');
@@ -95,12 +117,7 @@ async function genCookie(serverResponse)
 		var digest = (md5.update(randomstring.generate(32))).digest('hex');
 		console.log("DIGEST: " + digest);
 		var query = `INSERT INTO cookies VALUES('${digest}', '${expiration}');`
-		debugger;
-		dbConnection = await mysql.createConnection({
-			user:'temp',
-			password: 'secret',
-			database: 'sqli_data'
-		});
+		dbConnection = await queryDatabase();
 		try
 		{
 			const results = await dbConnection.query(query);
@@ -121,7 +138,7 @@ async function queryPOST(data)
 	query = `SELECT id,user,password FROM users WHERE user='${data}';`;
 	try 
 	{
-		const results = await dbConnection.query(query);
+		const [ results, fields ] = await dbConnection.query(query);
 		return results;
 	}
 	catch(err)
@@ -136,7 +153,7 @@ async function queryGET(clientQuery)
 	try 
 	{
 		dbConnection = await queryDatabase();
-		var getData = dbConnection.query(query); 
+		const [ results, fields ] = dbConnection.query(query); 
 		console.log("Returning results from getData()");
 		return results;
 	}
@@ -157,8 +174,7 @@ var server = http.createServer(function(request, response)
 		var dbConnection;
 		var dbData;
 		var userAgent;
-
-
+		var cookie_header;
 
 		// HEADER LOGGING INJECTION
 			//WIP Playing with a better parsing method here to extract the user-agent string instead of relying on its index
@@ -176,6 +192,7 @@ var server = http.createServer(function(request, response)
 
 		});
 		*/
+		
 		if(request.method == "GET")
 		{
 			//When I have the time, I should properly organise the 200/400 code paths
@@ -195,54 +212,39 @@ var server = http.createServer(function(request, response)
 		{
 			console.log("RECEIVED POST DATA");
 			request.setEncoding("utf8");
-			request.on("data", (data) => {
+
+			request.on("data", function(data) 
+			{
 				if(data === null) { console.log("NULL data in POST"); response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
-				try
+				cookie_header = checkCookie(request, response);
+				cookie_header.then(function(header)
 				{
-					const results = queryPOST(data);
-					results.then(function(returnedData)
+					debugger;
+					cookie_header = header;
+					console.log("header is: " + header);
+					//not pretty at all. Dont know why there's an extra new line and why .write() doesn't add one automatically after cookie_header.
+					// need to fix existing cookie logic
+					response.write(cookie_header, "utf8");
+					response.write("\n", "utf8");
+					try
 					{
-						response.write(JSON.stringify(returnedData));
-					});
-				}
-				catch(err)
-				{	
-					console.log("ERROR in POST QUERY: " + err);
-					response.end('HTTP/1.1 400 Bad Request \r\n\r\n');
-				}	
+						const results = queryPOST(data);
+						results.then(function(returnedData)
+						{
+							debugger;
+							response.write(JSON.stringify(returnedData));
+							response.end();
+						});
+					}
+					catch(err)
+					{	
+						console.log("ERROR in POST QUERY: " + err);
+						response.end('HTTP/1.1 400 Bad Request \r\n\r\n');
+					}
+				});
 			});
 		}
 		else {console.log('Invalid METHOD'); response.end('HTTP/1.1 400 Bad Request \r\n\r\n')};
-		
-		//COOKIE VALIDATION INJECTION
-		if (request.headers.cookie)
-		{
-			console.log("cookie is attched... checking validity.");
-			getCookie(request.headers.cookie.substring(10), response); 
-		}
-		else
-		{
-			console.log("COOKIE NOT ATTACHED, GENERATING");
-			const cookie = genCookie(response);
-			if(cookie == null) 
-			{
-				console.error("ERROR in COOKIE GENERATION: " + err);
-			}
-			try 
-			{ 
-				debugger;
-				cookie.then(function(data)
-				{
-					var cookie_header = `Set-Cookie: sessionId=${data}`; 
-					response.write(data, "utf8");
-					response.end(); 
-				});
-			}
-			catch(err) 
-			{
-				console.log("ERROR in Set-Cookie:" + err );
-			}
-		}
 });
 server.on('clientError', (err, socket) => 
 {
