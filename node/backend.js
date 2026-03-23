@@ -57,10 +57,8 @@ async function checkCookie(request, response)
 	{
 		console.log("cookie is attched... checking validity.");
 		cookie_pro = await getCookie(request.headers.cookie.substring(10)); 
-		cookie_pro.then(function(bool) {
-			if(bool) 
-				{ console.log("Cookie is valid!(From checkCookie)"); }
-		});
+		if (cookie_pro) 
+				{ console.log("Cookie is valid!(From checkCookie)"); return true;}
 	}
 	else
 	{
@@ -212,26 +210,25 @@ var server = http.createServer(function(request, response)
 		{
 			console.log("RECEIVED POST DATA");
 			request.setEncoding("utf8");
-
-			request.on("data", function(data) 
+			request.on("data", function(data)
 			{
 				if(data === null) { console.log("NULL data in POST"); response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
+				const results = queryPOST(data);
 				cookie_header = checkCookie(request, response);
 				cookie_header.then(function(header)
 				{
-					debugger;
-					cookie_header = header;
-					console.log("header is: " + header);
-					//not pretty at all. Dont know why there's an extra new line and why .write() doesn't add one automatically after cookie_header.
-					// need to fix existing cookie logic
-					response.write(cookie_header, "utf8");
-					response.write("\n", "utf8");
+					if(header != true)
+					{
+						console.log("header is: " + header);
+						//not pretty at all. Dont know why there's an extra new line and why .write() doesn't add one automatically after cookie_header.
+						// need to fix existing cookie logic
+						response.write(header, "utf8");
+						response.write("\n", "utf8");
+					}
 					try
 					{
-						const results = queryPOST(data);
 						results.then(function(returnedData)
 						{
-							debugger;
 							response.write(JSON.stringify(returnedData));
 							response.end();
 						});
