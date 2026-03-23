@@ -148,11 +148,12 @@ async function queryPOST(data)
 async function queryGET(clientQuery)
 {
 	query = `SELECT id,user,password FROM users WHERE user='${clientQuery}';`;
+	dbConnection = await queryDatabase();
 	try 
 	{
-		dbConnection = await queryDatabase();
-		const [ results, fields ] = dbConnection.query(query); 
+		const [ results, fields ] = await dbConnection.query(query); 
 		console.log("Returning results from getData()");
+		dbConnection.end();
 		return results;
 	}
 	catch(err)
@@ -193,19 +194,41 @@ var server = http.createServer(function(request, response)
 		
 		if(request.method == "GET")
 		{
-			//When I have the time, I should properly organise the 200/400 code paths
-			response.writeHead(200, {"Content-Type": "application/json"}); 
+			// !!! When I have the time, I should properly organise the 200/400 code paths
+			// NOT NEEDED? response.writeHead(200, {"Content-Type": "application/json"}); 
+			
 			clientQuery = request.url.slice(8);
-			console.log("Received query: " + clientQuery);
-
+			if(clientQuery === null) { console.log("NULL data in GET"); response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
+			
+			console.log("GET query: " + clientQuery);
 			const results = queryGET(clientQuery)
-			results.then(function(results)
+			cookie_header = checkCookie(request, response);
+
+			cookie_header.then(function(header)
 			{
-				response.write(JSON.stringify(results));
-				if(results == null) {console.log("NO DATA RETURNED FROM getData()");}
+				if(header != true)
+				{
+					console.log("There wasn't a cookie so I made one. Here it is: " + header);
+					response.write(header, "utf8");
+					response.write("\n", "utf8");
+				}
+				try
+				{
+					results.then(function(results)
+					{
+						if(results == null) { console.log("NO DATA RETURNED FROM getData()"); response.end(null);}
+						response.end(JSON.stringify(results));
+					});
+				}
+				catch(err)
+				{	
+					console.log("ERROR in GET QUERY: " + err);
+					response.end('HTTP/1.1 400 Bad Request \r\n\r\n');
+				}
 			});
-			response.end('HTTP/1.1 400 Bad Request \r\n\r\n');
 		}
+
+
 		else if (request.method == "POST" ) 
 		{
 			console.log("RECEIVED POST DATA");
