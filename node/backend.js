@@ -1,23 +1,37 @@
-// Create & Listen HTTP server
-// HTTP server takes input from an input field on index.html, passes to Node, which passes to mysql
-// Node returns data on index.html according to output returned from mysql.
 /*************TASKS**********/
 /*
-// Might as well take apache out of the equation and just run everything on the node... Could be an easier and more efficient solution.
-// Include payload file for ideas that didn't make it here, but could in other cases.
+* // Might as well take apache out of the equation and just run everything on the node... Could be an easier and more efficient solution.
+* // Include payload file for ideas that didn't make it here, but could in other cases.
 * GET DONE
 * POST SQLi DONE
 * Blind SQLi DONE
 * Header Based injections (see: http.request.headers) DONE
-
-* Cookie Based injections WIP
-
+* Cookie Based injections DONE
+*
+*	Problems:
+*		! queryDatabase() could use some optimising, now that I've converted from mysql -> mysql2 (promise based)
+*		!~ Inaccuracy: checkCookie() relies on getCookie() to query the database for validity. checkCookie() should handle that independently.
+*		
+*	Done:
+*	* Browser wasn't utilising/saving the cookie due to lack of CORS headers allowing him to.
+*	// Perhaps due to the lack of the Path cookie flag?
+*		// By default Path is set to the directory that made the cookie, in this case /sqli/.
+*		// The problem was CORS. As we are making a cross-origin request (diff port) that sets creds. Need to allow the origin via 
+*		// Acc-con-all-ori 'http://127.0.0.1' (NOT *, as that wouldn't allow for setting the cookie), acc-control-allow-creds (so that the 
+*		// Cookie will be included in all future querying requests to localhost:8000) and lastly 'credentials: include' in the fetch() 
+*			// ACAO + ACAC + credentials: include. 
+*	
+*	* The cookie header I'm setting is being treated as returned POST data due to a newline. Remove the newline and the header should register on the browser
+*			- also added appropriate CORS headers to work, as the port diff counts as a diff origin.
+*			-  Add CORS headers to POST as well
+*
+* SOAP/XML based injections WIP
+*
 * Mulitipart Form data injections
 * JSON based injections
-* SOAP/XML based injections
 */
 
-//A node.js driver is an interface for connecting the node.js process with other data sources, like other apps and DBMS'.
+
 let http = require('node:http');
 let { createHash } = require('node:crypto');
 let randomstring = require('randomstring');
@@ -44,7 +58,10 @@ function queryDatabase()
 	});
 	
 
-	//can't yet perform both the querying and dbConnection creation in same func, can't fish db results out of dbConn.query()'s scope... Has to be a better workaround. 
+	//can't yet perform both the querying and dbConnection creation in same func -> can't fish db results out of dbConn.query()'s scope... Has to be a better workaround.  
+	
+		// THIS COULD BE SOLVED BY mysql2 INTEGRATION!!!
+
 	// can use response.write() here to append the results, then .end() after returning. response object should be modified if node/JS passes 
 		// function parameters by REFERENCE, rather than by VALUE
 	return dbConnection;
@@ -80,6 +97,7 @@ async function getCookie(cookieId)
 	query = `SELECT * FROM cookies WHERE id='${cookieId}' AND expiration > (SELECT UNIX_TIMESTAMP());`
 	try 
 	{
+		// no reason for getCookie() to check validity, maybe I did this because it made handling the promise in checkCookie and by extension inside the method logic easier?
 		const results = await dbConnection.query(query);	
 		if(Object.keys(results).length != 0) 
 		{
@@ -196,7 +214,7 @@ var server = http.createServer(function(request, response)
 		{
 			// !!! When I have the time, I should properly organise the 200/400 code paths
 			// NOT NEEDED? response.writeHead(200, {"Content-Type": "application/json"}); 
-			
+			console.log(">>Received GET DATA");
 			clientQuery = request.url.slice(8);
 			if(clientQuery === null) { console.log("NULL data in GET"); response.end('HTTP/1.1 400 Bad Request \r\n\r\n');}
 			
@@ -208,9 +226,10 @@ var server = http.createServer(function(request, response)
 			{
 				if(header != true)
 				{
-					console.log("There wasn't a cookie so I made one. Here it is: " + header);
-					response.write(header, "utf8");
-					response.write("\n", "utf8");
+					console.log("There wasn't a cookie so I made one. Here it is: " + header);					
+					response.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1');
+					response.setHeader('Access-Control-Allow-Credentials', 'true');
+					response.setHeader('Set-Cookie', header.substring(12));
 				}
 				try
 				{
@@ -242,11 +261,10 @@ var server = http.createServer(function(request, response)
 				{
 					if(header != true)
 					{
-						console.log("header is: " + header);
-						//not pretty at all. Dont know why there's an extra new line and why .write() doesn't add one automatically after cookie_header.
-						// need to fix existing cookie logic
-						response.write(header, "utf8");
-						response.write("\n", "utf8");
+						console.log("There wasn't a cookie so I made one. Here it is: " + header);
+						response.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1');
+						response.setHeader('Access-Control-Allow-Credentials', 'true');
+						response.setHeader('Set-Cookie', header.substring(12));
 					}
 					try
 					{
