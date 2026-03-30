@@ -42,10 +42,11 @@ Use of functions in the query:
 			}
 		}
 		//for some reason GET needs 2 clicks to set the value of "para", whatever for now
+			//update: it sets the value fine after the 1st click, it's the database querying that's the issue apparently.
 		// should look into proper JS debugging tools
 		async function fetchData(url, method, sink, query)
 		{
-			response = await fetch(url, {method: method, body:query})
+			response = await fetch(url, {method: method, body:query, credentials: 'include'})
 			.then(response => response.text())
 			.then(data => para.innerHTML = data)
 			.catch(error => console.log(error));
